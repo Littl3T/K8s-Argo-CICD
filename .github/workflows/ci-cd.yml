@@ -6,11 +6,15 @@ on:
     paths:
       - "deployment/**"   # inclut explicitement
 
+permissions:
+  contents: write
+
 env:
   IMAGE: tomdeneyer/flask-app
 
 jobs:
   build_push_update_deployment:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
     steps:
