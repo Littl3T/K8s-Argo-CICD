@@ -1,0 +1,57 @@
+name: CI/CD Flask -> Docker Hub -> Update /deployment (ArgoCD)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "deployment/**"   # inclut explicitement
+
+env:
+  IMAGE: tomdeneyer/flask-app
+
+jobs:
+  build_push_update_deployment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tag = commit SHA
+        id: vars
+        run: echo "TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push (SHA + latest)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.TAG }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Update image tag in deployment manifest
+        run: |
+          set -e
+          FILE="deployment/deployment.yaml"
+          sed -i "s|image: ${{ env.IMAGE }}:.*|image: ${{ env.IMAGE }}:${{ steps.vars.outputs.TAG }}|g" "$FILE"
+          echo "Updated manifest:"
+          cat "$FILE"
+
+      - name: Commit & push /deployment update
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployment/deployment.yaml
+          git commit -m "deploy: ${{ steps.vars.outputs.TAG }}" || echo "No changes"
+          git push
